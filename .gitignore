@@ -4,3 +4,4 @@ id_rsa
 id_ed25519
 id_ecdsa
 !*.pub
+scripts/python/config.yaml
