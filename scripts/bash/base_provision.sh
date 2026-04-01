@@ -18,6 +18,7 @@ apt install -y \
     net-tools \
     unattended-upgrades
 
+
 # --- UFW ---
 ufw default deny incoming
 ufw default allow outgoing
@@ -55,5 +56,57 @@ systemctl restart ssh
 
 # --- Timezone ---
 timedatectl set-timezone Europe/London
+
+# --- Log rotation script ---
+mkdir -p /var/log/homelab/archive
+
+cat > /usr/local/bin/rotate_logs.sh << 'EOF'
+#!/bin/bash
+set -e
+
+LOGDIR="/var/log/homelab"
+ARCHIVE="/var/log/homelab/archive"
+DATE=$(date +%Y-%m-%d)
+
+mkdir -p "$ARCHIVE"
+
+find "$LOGDIR" -maxdepth 1 -name "*.log" -mtime +1 | while read -r logfile; do
+    gzip -c "$logfile" > "$ARCHIVE/$(basename $logfile)-$DATE.gz"
+    > "$logfile"
+    echo "$(date): Rotated $logfile" >> /var/log/homelab/rotation.log
+done
+EOF
+
+chmod +x /usr/local/bin/rotate_logs.sh
+
+# --- Systemd service ---
+cat > /etc/systemd/system/log-rotate.service << 'EOF'
+[Unit]
+Description=Homelab log rotation
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rotate_logs.sh
+User=root
+EOF
+
+# --- Systemd timer ---
+cat > /etc/systemd/system/log-rotate.timer << 'EOF'
+[Unit]
+Description=Run log rotation nightly
+Requires=log-rotate.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable log-rotate.timer
+systemctl start log-rotate.timer
 
 echo "Provisioning complete for $HOSTNAME"
